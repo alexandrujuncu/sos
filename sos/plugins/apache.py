@@ -34,7 +34,8 @@ class RedHatApache(Apache, RedHatPlugin):
 
         self.add_copy_spec([
             "/etc/httpd/conf/httpd.conf",
-            "/etc/httpd/conf.d/*.conf"
+            "/etc/httpd/conf.d/*.conf",
+            "/etc/httpd/conf.modules.d/*.conf"
         ])
 
         self.add_forbidden_path("/etc/httpd/conf/password.conf")
@@ -64,4 +65,4 @@ class DebianApache(Apache, DebianPlugin, UbuntuPlugin):
         if self.get_option("log"):
             self.add_copy_spec("/var/log/apache2/*")
 
-# vim: et ts=4 sw=4
+# vim: set et ts=4 sw=4 :

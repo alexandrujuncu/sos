@@ -24,7 +24,10 @@ class Last(Plugin, RedHatPlugin, DebianPlugin, UbuntuPlugin):
 
     def setup(self):
         self.add_cmd_output("last", root_symlink="last")
-        self.add_cmd_output("last reboot")
-        self.add_cmd_output("last shutdown")
+        self.add_cmd_output([
+                "last reboot",
+                "last shutdown",
+                "lastlog"
+                ])
 
 # vim: et ts=4 sw=4

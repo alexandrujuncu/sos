@@ -34,6 +34,9 @@ using GitHub please make sure your branch applies to the current master as a
 'fast forward' merge (i.e. without creating a merge commit). Use the `git
 rebase` command to update your branch to the current master if necessary.
 
+Please refer to the [contributor guidelines][0] for guidance on formatting
+patches and commit messages.
+
 ## Documentation
 
 User and API [documentation][6] is automatically generated using [Sphinx][7]
@@ -54,9 +57,9 @@ pull requests.
 ### Manual Installation
 
 ```
+You can simply run from the git checkout now ==> Ex: sudo ./sosreport -a
 to install locally (as root) ==> make install
 to build an rpm ==> make rpm
-to build a deb ==> make deb
 ```
 
 ### Pre-built Packaging

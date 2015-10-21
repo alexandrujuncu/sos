@@ -120,15 +120,20 @@ def is_executable(command):
     return any(os.access(path, os.X_OK) for path in candidates)
 
 
-def sos_get_command_output(command, timeout=300, runat=None, stderr=True):
-    """Execute a command through the system shell. First checks to see if the
-    requested command is executable. Returns (returncode, stdout, 0)"""
-    def _child_chdir():
-        if(runat):
-            try:
-                os.chdir(runat)
-            except:
-                self.log_error("failed to chdir to '%s'" % runat)
+def sos_get_command_output(command, timeout=300, stderr=False,
+                           chroot=None, chdir=None):
+    """Execute a command and return a dictionary of status and output,
+    optionally changing root or current working directory before
+    executing command.
+    """
+    # Change root or cwd for child only. Exceptions in the prexec_fn
+    # closure are caught in the parent (chroot and chdir are bound from
+    # the enclosing scope).
+    def _child_prep_fn():
+        if (chroot):
+                os.chroot(chroot)
+        if (chdir):
+                os.chdir(chdir)
 
     cmd_env = os.environ
     # ensure consistent locale for collected command output
@@ -145,17 +150,14 @@ def sos_get_command_output(command, timeout=300, runat=None, stderr=True):
         p = Popen(args, shell=False, stdout=PIPE,
                   stderr=STDOUT if stderr else PIPE,
                   bufsize=-1, env=cmd_env, close_fds=True,
-                  preexec_fn=_child_chdir)
+                  preexec_fn=_child_prep_fn)
+        stdout, stderr = p.communicate()
     except OSError as e:
         if e.errno == errno.ENOENT:
             return {'status': 127, 'output': ""}
         else:
             raise e
 
-    stdout, stderr = p.communicate()
-
-    # Required hack while we still pass shell=True to Popen; a Popen
-    # call with shell=False for a non-existant binary will raise OSError.
     if p.returncode == 126 or p.returncode == 127:
         stdout = six.binary_type(b"")
 
@@ -181,11 +183,12 @@ def import_module(module_fqname, superclasses=None):
     return modules
 
 
-def shell_out(cmd, timeout=30, runat=None):
+def shell_out(cmd, timeout=30, chroot=None, runat=None):
     """Shell out to an external command and return the output or the empty
     string in case of error.
     """
-    return sos_get_command_output(cmd, timeout=timeout, runat=runat)['output']
+    return sos_get_command_output(cmd, timeout=timeout,
+                                  chroot=chroot, chdir=runat)['output']
 
 
 class ImporterHelper(object):
@@ -232,4 +235,4 @@ class ImporterHelper(object):
 
         return plugins
 
-# vim: et ts=4 sw=4
+# vim: set et ts=4 sw=4 :

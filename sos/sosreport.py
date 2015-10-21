@@ -225,6 +225,10 @@ class XmlReport(object):
         outf.close()
 
 
+# valid modes for --chroot
+chroot_modes = ["auto", "always", "never"]
+
+
 class SoSOptions(object):
     _list_plugins = False
     _noplugins = []
@@ -246,7 +250,9 @@ class SoSOptions(object):
     _list_profiles = False
     _config_file = ""
     _tmp_dir = ""
-    _report = True
+    _noreport = False
+    _sysroot = None
+    _chroot = 'auto'
     _compression_type = 'auto'
 
     _options = None
@@ -516,17 +522,43 @@ class SoSOptions(object):
         self._tmp_dir = value
 
     @property
-    def report(self):
+    def noreport(self):
         if self._options is not None:
-            return self._options.report
-        return self._report
+            return self._options.noreport
+        return self._noreport
 
-    @report.setter
-    def report(self, value):
+    @noreport.setter
+    def noreport(self, value):
         self._check_options_initialized()
         if not isinstance(value, bool):
-            raise TypeError("SoSOptions.report expects a boolean")
-        self._report = value
+            raise TypeError("SoSOptions.noreport expects a boolean")
+        self._noreport = value
+
+    @property
+    def sysroot(self):
+        if self._options is not None:
+            return self._options.sysroot
+        return self._sysroot
+
+    @sysroot.setter
+    def sysroot(self, value):
+        self._check_options_initialized()
+        self._sysroot = value
+
+    @property
+    def chroot(self):
+        if self._options is not None:
+            return self._options.chroot
+        return self._chroot
+
+    @chroot.setter
+    def chroot(self, value):
+        self._check_options_initialized()
+        if value not in chroot_modes:
+            msg = "SoSOptions.chroot '%s' is not a valid chroot mode: "
+            msg += "('auto', 'always', 'never')"
+            raise ValueError(msg % value)
+        self._chroot = value
 
     @property
     def compression_type(self):
@@ -614,8 +646,15 @@ class SoSOptions(object):
                           help="specify alternate temporary directory",
                           default=None)
         parser.add_option("--no-report", action="store_true",
-                          dest="report",
+                          dest="noreport",
                           help="Disable HTML/XML reporting", default=False)
+        parser.add_option("-s", "--sysroot", action="store", dest="sysroot",
+                          help="system root directory path (default='/')",
+                          default=None)
+        parser.add_option("-c", "--chroot", action="store", dest="chroot",
+                          help="chroot executed commands to SYSROOT "
+                               "[auto, always, never] (default=auto)",
+                               default="auto")
         parser.add_option("-z", "--compression-type", dest="compression_type",
                           help="compression technology to use [auto, "
                                "gzip, bzip2, xz] (default=auto)",
@@ -637,6 +676,7 @@ class SoSReport(object):
         self.archive = None
         self.tempfile_util = None
         self._args = args
+        self.sysroot = "/"
 
         try:
             import signal
@@ -649,7 +689,7 @@ class SoSReport(object):
         self._read_config()
 
         try:
-            self.policy = sos.policies.load()
+            self.policy = sos.policies.load(sysroot=self.opts.sysroot)
         except KeyboardInterrupt:
             self._exit(0)
 
@@ -667,6 +707,25 @@ class SoSReport(object):
         self.tempfile_util = TempFileUtil(self.tmpdir)
         self._set_directories()
 
+        self._setup_logging()
+
+        msg = "default"
+        host_sysroot = self.policy.host_sysroot()
+        # set alternate system root directory
+        if self.opts.sysroot:
+            msg = "cmdline"
+            self.sysroot = self.opts.sysroot
+        elif self.policy.in_container() and host_sysroot != os.sep:
+            msg = "policy"
+            self.sysroot = host_sysroot
+        self.soslog.debug("set sysroot to '%s' (%s)" % (self.sysroot, msg))
+
+        if self.opts.chroot not in chroot_modes:
+            self.soslog.error("invalid chroot mode: %s" % self.opts.chroot)
+            logging.shutdown()
+            self.tempfile_util.clean()
+            self._exit(1)
+
     def print_header(self):
         self.ui_log.info("\n%s\n" % _("sosreport (version %s)" %
                                       (__version__,)))
@@ -679,6 +738,7 @@ class SoSReport(object):
             'tmpdir': self.tmpdir,
             'soslog': self.soslog,
             'policy': self.policy,
+            'sysroot': self.sysroot,
             'verbosity': self.opts.verbosity,
             'xmlreport': self.xml_report,
             'cmdlineopts': self.opts,
@@ -870,6 +930,7 @@ class SoSReport(object):
             extra_classes.append(sos.plugins.ExperimentalPlugin)
         valid_plugin_classes = tuple(policy_classes + extra_classes)
         validate_plugin = self.policy.validate_plugin
+        remaining_profiles = list(self.opts.profiles)
         # validate and load plugins
         for plug in plugins:
             plugbase, ext = os.path.splitext(plug)
@@ -922,12 +983,21 @@ class SoSReport(object):
                     self._skip(plugin_class, _("not specified"))
                     continue
 
+                for i in plugin_class.profiles:
+                    if i in remaining_profiles:
+                        remaining_profiles.remove(i)
+
                 self._load(plugin_class)
             except Exception as e:
                 self.soslog.warning(_("plugin %s does not install, "
                                       "skipping: %s") % (plug, e))
                 if self.raise_plugins:
                     raise
+        if len(remaining_profiles) > 0:
+            self.soslog.error(_("Unknown or inactive profile(s) provided:"
+                                " %s") % ", ".join(remaining_profiles))
+            self.list_profiles()
+            self._exit(1)
 
     def _set_all_options(self):
         if self.opts.usealloptions:
@@ -1406,7 +1476,6 @@ class SoSReport(object):
 
     def execute(self):
         try:
-            self._setup_logging()
             self.policy.set_commons(self.get_commons())
             self.print_header()
             self.load_plugins()
@@ -1430,7 +1499,7 @@ class SoSReport(object):
             self.prework()
             self.setup()
             self.collect()
-            if not self.opts.report:
+            if not self.opts.noreport:
                 self.report()
                 self.html_report()
                 self.plain_report()
@@ -1458,4 +1527,4 @@ def main(args):
     sos = SoSReport(args)
     sos.execute()
 
-# vim: et ts=4 sw=4
+# vim: set et ts=4 sw=4 :

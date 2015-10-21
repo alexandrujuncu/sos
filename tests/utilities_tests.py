@@ -68,6 +68,13 @@ class ExecutableTest(unittest.TestCase):
         self.assertEquals(result['status'], 127)
         self.assertEquals(result['output'], "")
 
+    def test_output_chdir(self):
+        cmd = "/bin/bash -c 'echo $PWD'"
+        result = sos_get_command_output(cmd, chdir=TEST_DIR)
+        print(result)
+        self.assertEquals(result['status'], 0)
+        self.assertEquals(result['output'].strip(), TEST_DIR)
+
     def test_shell_out(self):
         path = os.path.join(TEST_DIR, 'test_exe.py')
         self.assertEquals("executed\n", shell_out(path))
@@ -87,4 +94,4 @@ class FindTest(unittest.TestCase):
         leaves = find("leaf", TEST_DIR, path_pattern="tests/path")
         self.assertFalse(any(name.endswith("leaf") for name in leaves))
 
-# vim: et ts=4 sw=4
+# vim: set et ts=4 sw=4 :

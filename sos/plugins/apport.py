@@ -24,6 +24,14 @@ class Apport(Plugin, DebianPlugin, UbuntuPlugin):
     profiles = ('debug',)
 
     def setup(self):
+        if not self.get_option("all_logs"):
+            limit = self.get_option("log_size")
+            self.add_copy_spec_limit("/var/log/apport.log",
+                                     sizelimit=limit)
+            self.add_copy_spec_limit("/var/log/apport.log.1",
+                                     sizelimit=limit)
+        else:
+            self.add_copy_spec("/var/log/apport*")
         self.add_copy_spec("/etc/apport/*")
         self.add_copy_spec("/var/lib/whoopsie/whoopsie-id")
         self.add_cmd_output(
@@ -33,4 +41,4 @@ class Apport(Plugin, DebianPlugin, UbuntuPlugin):
         self.add_cmd_output("ls -alh /var/crash/")
         self.add_cmd_output("bash -c 'grep -B 50 -m 1 ProcMaps /var/crash/*'")
 
-# vim: et ts=4 sw=4
+# vim: set et ts=4 sw=4 :
